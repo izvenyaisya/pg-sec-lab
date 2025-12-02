@@ -1,0 +1,414 @@
+# 🐳 Docker Testing для pg-sec-lab
+
+## Быстрый старт
+
+```bash
+# 1. Запустить все тесты одной командой
+docker-compose up --build
+
+# 2. Или используйте Makefile
+make test
+```
+
+## Что включено
+
+### 📦 Docker Compose сервисы
+
+1. **postgres** (порт 5432) - Тестовая база данных
+   - Пользователь: postgres / postgres
+   - База: testdb
+   - С тестовыми данными
+
+2. **postgres-prod** (порт 5433) - "Продакшн" база
+   - Пользователь: produser / prodpass
+   - База: proddb
+   - С комплексной структурой
+
+3. **pg-sec-lab** - Приложение с автотестами
+   - Запускает 15+ тестов
+   - Генерирует отчёты
+
+## Примеры использования
+
+### 1. Полное тестирование
+
+```bash
+# Запустить все тесты
+docker-compose up --build
+
+# Результат:
+# ====================================
+#    ИТОГОВЫЕ РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ
+# ====================================
+# Всего тестов:    15
+# Успешных:        15
+# Провалено:       0
+# Процент успеха:  100.00%
+```
+
+### 2. Отдельные команды
+
+```bash
+# Только генерация SQL
+make generate
+
+# Вывод:
+# Генерация SQL...
+# SQL сгенерирован: output/generated.sql
+
+# Только проверка политик
+make verify
+
+# Только анализ конфигурации
+make analyze
+
+# Анализ "продакшн" БД
+make analyze-prod
+```
+
+### 3. Работа с базами данных
+
+```bash
+# Подключиться к тестовой БД
+make db-shell
+
+# Внутри psql:
+testdb=# \dt
+testdb=# SELECT * FROM customers;
+
+# Подключиться к продакшн БД
+make prod-db-shell
+```
+
+### 4. Интерактивный режим
+
+```bash
+# Войти в контейнер
+make shell
+
+# Внутри контейнера:
+/app # ./pg-sec-lab --help
+/app # ./pg-sec-lab generate --policy policy.yaml
+/app # ./pg-sec-lab analyze --dsn "postgres://..."
+```
+
+## Makefile команды
+
+```bash
+make help              # Показать все команды
+make build             # Собрать Docker образ
+make test              # Запустить все тесты
+make test-quick        # Быстрый запуск (без пересборки)
+make up                # Запустить БД
+make down              # Остановить всё
+make clean             # Полная очистка
+make logs              # Показать логи
+make shell             # Войти в shell
+make db-shell          # Войти в psql тестовой БД
+make prod-db-shell     # Войти в psql продакшн БД
+make generate          # Команда generate
+make verify            # Команда verify
+make analyze           # Команда analyze
+make analyze-prod      # Анализ продакшн БД
+make results           # Показать результаты
+make status            # Статус сервисов
+make benchmark         # Бенчмарк производительности
+make ci                # CI pipeline
+```
+
+## Структура тестов
+
+### Автоматические тесты (docker-test.sh)
+
+1. ✅ **Тест справки** - проверка `--help`
+2. ✅ **Генерация в stdout** - вывод SQL
+3. ✅ **Генерация в файл** - создание generated.sql
+4. ✅ **Проверка SQL** - наличие CREATE ROLE, RLS, POLICY, GRANT
+5. ✅ **Создание таблиц** - инициализация тестовых данных
+6. ✅ **Команда verify** - проверка политик
+7. ✅ **Команда analyze** - анализ конфигурации
+8. ✅ **Проверка JSON** - структура отчёта
+9. ✅ **Применение SQL** - выполнение политик
+10. ✅ **Проверка ролей** - созданные роли в БД
+11. ✅ **Проверка RLS** - включение Row Level Security
+
+## Результаты тестов
+
+### Сгенерированные файлы
+
+```
+output/
+├── generated.sql       # SQL-скрипт политик
+├── report.json        # Отчёт анализа тестовой БД
+└── report-prod.json   # Отчёт анализа продакшн БД
+
+test-results/
+├── summary.txt        # Итоги тестирования
+├── verify-output.log  # Логи verify
+├── analyze-output.log # Логи analyze
+└── apply-sql.log      # Логи применения SQL
+```
+
+### Пример generated.sql
+
+```sql
+-- Generated by pg-sec-lab
+-- System: training-crm, Version: 1.0
+
+-- Create roles
+CREATE ROLE "analyst" NOLOGIN NOCREATEDB;
+CREATE ROLE "support" NOLOGIN NOCREATEDB;
+CREATE ROLE "reporting_app" LOGIN NOCREATEDB;
+GRANT "analyst" TO "reporting_app";
+
+-- Enable RLS on tables
+ALTER TABLE "public"."customers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."customers" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "rls_select_customers" ON "public"."customers" 
+  FOR SELECT USING (tenant_id = current_setting('app.tenant_id')::uuid);
+...
+```
+
+### Пример report.json
+
+```json
+{
+  "instance": {
+    "version": "PostgreSQL 16.0 on x86_64",
+    "settings": {
+      "ssl": "off",
+      "password_encryption": "scram-sha-256",
+      "log_connections": "off"
+    }
+  },
+  "roles": [
+    {
+      "name": "postgres",
+      "login": true,
+      "superuser": true,
+      "bypassrls": true,
+      "grants": []
+    }
+  ],
+  "tables": [
+    {
+      "schema": "public",
+      "name": "customers",
+      "rls_enabled": true
+    },
+    {
+      "schema": "public",
+      "name": "orders",
+      "rls_enabled": true
+    }
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "code": "SSL_DISABLED",
+      "message": "SSL is disabled on this PostgreSQL instance"
+    },
+    {
+      "severity": "critical",
+      "code": "SUPERUSER_LOGIN",
+      "message": "Role postgres is a superuser with login capability"
+    }
+  ]
+}
+```
+
+## Примеры команд
+
+### Посмотреть результаты
+
+```bash
+# Итоги тестов
+make results
+
+# Только summary
+cat test-results/summary.txt
+
+# Только findings из JSON
+cat output/report.json | jq '.findings'
+```
+
+### Работа с PostgreSQL
+
+```bash
+# Список таблиц
+make db-shell
+\dt
+
+# Проверить RLS
+SELECT relname, relrowsecurity 
+FROM pg_class 
+WHERE relkind = 'r' AND relrowsecurity = true;
+
+# Список ролей
+\du
+
+# Политики
+SELECT * FROM pg_policies;
+```
+
+### Бенчмарк
+
+```bash
+make benchmark
+
+# Вывод:
+# Тест 1: Генерация SQL
+# real    0m0.543s
+# 
+# Тест 2: Анализ БД  
+# real    0m1.234s
+```
+
+## CI/CD интеграция
+
+### GitHub Actions
+
+```yaml
+name: Docker Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run tests
+        run: make test
+      - name: Upload results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            output/
+            test-results/
+```
+
+### GitLab CI
+
+```yaml
+test:
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - make test
+  artifacts:
+    paths:
+      - output/
+      - test-results/
+```
+
+## Troubleshooting
+
+### PostgreSQL не запускается
+
+```bash
+# Проверить логи
+docker-compose logs postgres
+
+# Пересоздать
+docker-compose down -v
+docker-compose up -d postgres
+```
+
+### Тесты падают
+
+```bash
+# Детальные логи
+docker-compose logs pg-sec-lab
+
+# Интерактивный режим
+make shell
+/app/docker-test.sh
+```
+
+### Порты заняты
+
+```bash
+# Изменить порты в docker-compose.yml
+ports:
+  - "15432:5432"  # вместо 5432:5432
+```
+
+### Полная очистка
+
+```bash
+# Всё удалить
+make clean
+
+# Или вручную
+docker-compose down -v --rmi all
+rm -rf output/ test-results/
+```
+
+## Windows (PowerShell)
+
+```powershell
+# Вместо make используйте docker-compose напрямую
+docker-compose up --build
+
+# Или создайте .ps1 скрипты:
+.\run-tests.ps1
+```
+
+## Производительность
+
+| Операция | Время |
+|----------|-------|
+| Сборка образа | ~30 сек |
+| Запуск PostgreSQL | ~5 сек |
+| Выполнение тестов | ~15 сек |
+| **Итого** | **~1 минута** |
+
+## Лучшие практики
+
+1. ✅ Запускайте `make test` перед коммитом
+2. ✅ Проверяйте `test-results/summary.txt`
+3. ✅ Используйте `make clean` между запусками
+4. ✅ Сохраняйте `output/` для анализа
+5. ✅ Интегрируйте в CI/CD
+
+## Дополнительные возможности
+
+### Разные версии PostgreSQL
+
+```yaml
+# docker-compose.yml
+postgres:
+  image: postgres:15-alpine  # или 14, 13
+```
+
+### Добавление своих тестов
+
+Отредактируйте `docker-test.sh`:
+```bash
+run_test "Мой тест" \
+    "команда для проверки"
+```
+
+### Кастомная policy.yaml
+
+```bash
+# Создайте свой файл
+cp policy.yaml my-policy.yaml
+
+# Используйте его
+docker-compose run --rm pg-sec-lab generate \
+  --policy /app/my-policy.yaml
+```
+
+## Заключение
+
+Docker-окружение предоставляет:
+
+✅ **Изолированное тестирование** - независимо от локального окружения  
+✅ **Автоматизацию** - 15+ тестов автоматически  
+✅ **Воспроизводимость** - одинаковые результаты везде  
+✅ **CI/CD готовность** - легко интегрируется  
+✅ **Простоту** - одна команда для запуска  
+
+Просто запустите `make test` и получите полный отчёт о работе pg-sec-lab! 🚀

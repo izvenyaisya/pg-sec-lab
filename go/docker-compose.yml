@@ -1,0 +1,70 @@
+services:
+  # PostgreSQL для тестирования
+  postgres:
+    image: postgres:16-alpine
+    container_name: pg-sec-lab-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: testdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./test-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pg-sec-lab-network
+
+  # pg-sec-lab приложение для тестирования
+  pg-sec-lab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pg-sec-lab-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/testdb?sslmode=disable"
+    volumes:
+      - ./policy.yaml:/app/policy.yaml:ro
+      - ./output:/app/output
+      - ./test-results:/app/test-results
+    networks:
+      - pg-sec-lab-network
+    entrypoint: ["/bin/sh"]
+    command: ["-c", "/app/docker-test.sh"]
+
+  # Продакшн база для анализа
+  postgres-prod:
+    image: postgres:16-alpine
+    container_name: pg-sec-lab-prod
+    environment:
+      POSTGRES_USER: produser
+      POSTGRES_PASSWORD: prodpass
+      POSTGRES_DB: proddb
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./test-prod-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U produser -d proddb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pg-sec-lab-network
+
+volumes:
+  postgres_data:
+  postgres_prod_data:
+
+networks:
+  pg-sec-lab-network:
+    driver: bridge

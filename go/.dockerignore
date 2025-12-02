@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Документация
+*.md
+!README.md
+
+# Директории результатов
+output/
+test-results/
+
+# Compiled binaries
+*.exe
+pg-sec-lab
+
+# Go
+*.test
+*.out
+coverage.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log

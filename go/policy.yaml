@@ -1,0 +1,42 @@
+metadata:
+  system: "training-crm"
+  version: "1.0"
+
+tenants:
+  enabled: true
+  setting: "app.tenant_id"
+
+roles:
+  analyst:
+    login: false
+    members: [reporting_app]
+    privileges:
+      - object: "public.orders"
+        actions: ["SELECT"]
+      - object: "public.customers_masked"
+        actions: ["SELECT"]
+
+  support:
+    login: false
+    privileges:
+      - object: "public.customers_masked"
+        actions: ["SELECT"]
+
+  reporting_app:
+    login: true
+    can_create_db: false
+
+tables:
+  public.customers:
+    rls:
+      enabled: true
+      select_policy: "tenant_id = current_setting('app.tenant_id')::uuid"
+    masks:
+      - column: "email"
+        expression: "regexp_replace(email, '@.*$', '@***')"
+        exposed_as: "customers_masked"
+
+  public.orders:
+    rls:
+      enabled: true
+      select_policy: "tenant_id = current_setting('app.tenant_id')::uuid"
